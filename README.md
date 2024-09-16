@@ -1,9 +1,13 @@
 # Metagenomics on Hoffman
-Jacobs Lab: Run Metaphlann4 and Humann on the UCLA Supercomputer Hoffman2. 
+Jacobs Lab: Run Metaphlann4 and Humann on the UCLA Supercomputer Hoffman2. Intended for first time setup.
 
 This is applicable to anyone trying to scale metagenomic data preprocessing for many samples on a supercomputer. 
 At UCLA, our HPC job scheduling system is the Univa Grid Engine, derived from Sun Grid Engine. Therefore, these commands carry over to other UGE job scheduling systems. 
 
+Software versions used in this tutorial (Dec 2022)
+- Metaphlan v4.0 
+- Humann v3.6
+- KneadData v0.10.0
 
 ---
 ## Basic supercomputer instructions for novices
@@ -44,6 +48,10 @@ To delete all jobs in queue:
 ```bash
 qdel -u julianne
 ```
+To transfer all files in a directory to your $SCRATCH directory in Hoffman:
+```bash
+scp -r .\JJ_pool1_S-23-0073_GAP506-380518546\ julianne@hoffman2.idre.ucla.edu:/u/scratch/j/julianne
+```
 ---
 ## Setting up the Environment for Metaphlann4 and Humann
 
@@ -76,7 +84,7 @@ conda config --add channels bioconda
 conda config --add channels conda-forge
 conda config --add channels biobakery
 ```
-Install HUMAnN 3.0 software with demo databases and Metaphlan 3.0. Also update all humann databases. Note path/to/database should be replaced with the directory to which you want to download databases.
+Install HUMAnN 3.0 software with demo databases and Metaphlan 3.0. Also update all humann databases. Note path/to/database should be replaced with the directory to which you want to download databases. If ```conda install humann -c biobakery``` takes too long, it's a good idea to try ```pip install humann --no-binary :all:``` as suggested by Huttenhower Lab.
 
 ```bash
     conda install humann -c biobakery
@@ -123,20 +131,25 @@ To submit a job for each pair of samples:
 
 ```
 
+To merge metaphlan outputs (from Huttenhower Lab): 
+```bash
+merge_metaphlan_tables.py metaphlan_output*.txt > output/merged_abundance_table.txt
+```
+
 --------------------------------------
 ## Installing and running KneadData 
 
 
 Anecdotally, I found that installation of package dependencies of kneaddata had a lot of issues, so I think it is safer to create a new environment separate from biobakery3 purely for kneaddata. 
 ```bash 
-conda env create -f kneaddata
+conda create --name kneaddata python=3.7
 conda activate kneaddata
 ```
 
-By default, installations are made in the $HOME directory. This is recommended: 
+By default, installations are made in the $HOME directory. This is recommended. Anecdotally, I found kneaddata 0.12.0 does not work well for paired samples, instead thinking that all reads are unmatched between R1 and R2. Workaround solutions proposing to modify read headers by removing the space also did not resolve the issue.
 
 ```bash
-pip install kneaddata
+pip install kneaddata==0.10.0
 ```
 
 Alternatively, if the $HOME directory is full, download to SCRATCH. however, you will need to modify $PATH everytime you reestablish a new connection via ssh or you can permanently change $PATH via direct modification of a config file `.bash_profile` if you're using bash. if you're submitting job via `qsub` (versus running interactively) you probably want to modify `.bash_profile`, `.bashrc`, and `.condarc`.
@@ -159,9 +172,9 @@ nano config.py
 ```
 - "Unable to find trimmomatic. Please provide the full path"
 ![image](https://user-images.githubusercontent.com/62775127/208792482-c6febee7-808f-4e1e-acd7-a95654b940e2.png)
-You will merely need to locate the filepath to trimmomatic, which is somewhere in $HOME/.conda/pkgs:
+You will merely need to locate the filepath to trimmomatic, which is somewhere in $HOME:
 ```bash
-/u/home/j/julianne/.conda/pkgs/trimmomatic-0.39-hdfd78af_2/share/trimmomatic-0.39-2/
+find $HOME -name trimmomatic
 ```
 
 Now, install the reference genomes that you will need for kneaddata (below is just for human genome):
@@ -188,7 +201,13 @@ Move all kneaddata outputs to a new folders and remove all the intermediate file
 ```bash
 mv *kneaddata* kneaddata_outputs
 find . -type f -not -name '*data_paired_*' -print0 | xargs -0 -I {} rm -v {}
----
+```
+
+Concatenate paired kneaddata outputs into one fastq file for running Humann:
+```bash
+for f in *R1_001_kneaddata_paired_1.fastq; do name=$(basename $f R1_001_kneaddata_paired_1.fastq); cat ${name}R1_001_kneaddata_paired_1.fastq ${name}R1_001_kneaddata_paired_2.fastq > merged_${name}_kneaddata_paired.fastq; done
+```
+---------
 ## Running Humann
 Update to Metaphlan 4.0 if not already running 4.0 (check with `--version` parameter). This newer version should prevent getting the error "Warning: Unable to download https://www.dropbox.com/sh/7qze7m7g9fe2xjg/AAA4XDP85WHon_eHvztxkamTa/file_list.txt?dl=1. UnboundLocalError: local variable 'ls_f' referenced before assignment" and having to resort to finding workaround ways to download the file.
 
@@ -206,3 +225,48 @@ Modify the path variable as before if running interactively:
 export PATH=$PATH:/u/home/j/julianne/.local/bin
 ```
 
+Update `humann_config` file to the location of databases:
+```bash
+(humann) -bash-4.2$ humann_config --update database_folders nucleotide /u/scratch/j/julianne/humann_databases/chocophlan/
+HUMAnN configuration file updated: database_folders : nucleotide = /u/scratch/j/julianne/humann_databases/chocophlan/
+(humann) -bash-4.2$ humann_config --update database_folders protein /u/scratch/j/julianne/humann_databases/uniref/
+HUMAnN configuration file updated: database_folders : protein = /u/scratch/j/julianne/humann_databases/uniref/
+(humann) -bash-4.2$ humann_config --update database_folders utility_mapping /u/scratch/j/julianne/humann_databases/utility_mapping/
+HUMAnN configuration file updated: database_folders : utility_mapping = /u/scratch/j/julianne/humann_databases/utility_mapping/
+```
+
+Run Humann on concatenated KneadData outputs: 
+```bash
+for file in *; do qsub ../../run_humann.sh $file; done
+```
+---------
+## Helpful Commands
+
+Move all files from various subdirectories to current directory:
+```bash
+find ./ -type f -print0 | xargs -0 mv -t ./
+```
+If jobs show "eqw" for some files and you need to move files starting alphabetically with some letter:
+```bash
+mv [XYZ]*.fastq.gz new_directory/
+```
+Move files containing filenames in txt file to a new folder
+```bash
+while IFS= read -r partial_filename; do mv *"$partial_filename"* rerun_humann; done < $SCRATCH/2023_001/rerun_humann.txt
+```
+Remove duplicates:
+```bash
+sort -u your_input_file.txt > no_duplicates_output_file.txt
+```
+Find items in txt file 2 that are not in txt file 1
+```bash
+grep -F -x -v -f file1.txt file2.txt > unique_filenames.txt
+```
+Filter out filenames containing R2
+```bash
+grep -v "_R2" filenames.txt > filtered_filenames.txt
+```
+Use cat and cut to modify filenames rapidly:
+```bash
+cat filenames.txt | cut -d'_' -f4-6 
+```

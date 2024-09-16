@@ -8,7 +8,7 @@
 #$ -l h_rt=24:00:00,h_data=4G
 ## Modify the parallel environment
 ## and the number of cores as needed:
-#$ -pe shared 10
+#$ -pe shared 20
 # Email address to notify
 #$ -M jcyang1617@g.ucla.edu
 # Notify when
@@ -23,11 +23,11 @@ echo " "
 . /u/local/Modules/default/init/modules.sh
 ## Edit the line below as needed:
 module load anaconda3
-conda activate humann
+conda activate kneaddata
 
 ## substitute the command to run your code
 ## in the two lines below:
-metaphlan $1 --bowtie2out ${1%.*}_metagenome.bowtie2.bz2 --nproc 10 --input_type fastq -o ${1%.*}_profiled_metagenome.txt --bowtie2db metaphlan_database --index mpa_vJan21_CHOCOPhlAnSGB_202103
+kneaddata --input $1 --input $2 --reference-db /u/scratch/j/julianne/kneaddata_databases --output ${1:0:10}_kneaddata --trimmomatic /u/home/j/julianne/.conda/pkgs/trimmomatic-0.39-hdfd78af_2/share/trimmomatic-0.39-2/ -p 20 -t 20 --remove-intermediate-output  
 
 # echo job info on joblog:
 echo "Job $JOB_ID ended on:   " `hostname -s`
